@@ -1,0 +1,120 @@
+```{r}
+# Carregando pacotes necessários
+install.packages(c("tidyverse", "lubridate", "ggplot2", "dplyr", "readr", "binom"))
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(binom)
+
+# Carregando os dados
+data <- read_csv("Artigo GPT Respostas.csv")
+
+# Convertendo a coluna de data e hora para o formato correto
+data$`Carimbo de data/hora` <- mdy_hms(data$`Carimbo de data/hora`)
+
+# Estatísticas descritivas
+summary(data)
+
+# Contagem de respostas por curso
+data %>%
+  group_by(`Qual curso você faz?`) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x = `Qual curso você faz?`, y = count)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Número de respostas por curso", x = "Curso", y = "Número de respostas")
+
+# Contagem de respostas por nível de utilidade percebida
+utilidade_respostas <- data %>%
+  group_by(`Qual nível você acredita que um chatbot pode ser útil como ferramenta de busca de conhecimento em sua área acadêmica?`) %>%
+  summarise(count = n())
+
+utilidade_respostas %>%
+  ggplot(aes(x = `Qual nível você acredita que um chatbot pode ser útil como ferramenta de busca de conhecimento em sua área acadêmica?`, y = count)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Percepção de utilidade do chatbot", x = "Nível de utilidade percebida", y = "Número de respostas")
+
+# Calculando o intervalo de confiança para as proporções de cada nível de utilidade
+utilidade_respostas <- utilidade_respostas %>%
+  mutate(total = sum(count)) %>%
+  rowwise() %>%
+  mutate(conf_int = list(binom::binom.confint(count, total, methods = "wilson"))) %>%
+  unnest(conf_int) %>%
+  select(`Qual nível você acredita que um chatbot pode ser útil como ferramenta de busca de conhecimento em sua área acadêmica?`,
+         count, total, lower, upper)
+  
+print(utilidade_respostas)
+
+
+# Contagem de respostas por curso e nível de utilidade
+curso_utilidade <- data %>%
+  group_by(`Qual curso você faz?`, `Qual nível você acredita que um chatbot pode ser útil como ferramenta de busca de conhecimento em sua área acadêmica?`) %>%
+  summarise(count = n())
+
+# Criando tabela de contingência
+contingency_table <- curso_utilidade %>%
+  pivot_wider(names_from = `Qual nível você acredita que um chatbot pode ser útil como ferramenta de busca de conhecimento em sua área acadêmica?`, values_from = count)
+
+# Substituindo NA por 0
+contingency_table[is.na(contingency_table)] <- 0
+
+# Teste qui-quadrado de independência
+chisq_test <- chisq.test(contingency_table[, -1])
+
+# Verificando o resultado do teste
+chisq_test
+
+
+# O teste qui-quadrado indica que temos sim uma relação entre o curso e o nível de utilidade atribuído ao chatbot
+
+# Filtrando os dados para incluir apenas respostas 'útil' e 'muito útil'
+data_util <- data %>%
+  filter(`Qual nível você acredita que um chatbot pode ser útil como ferramenta de busca de conhecimento em sua área acadêmica?` %in% c("Útil", "Muito útil"))
+
+# Contagem de respostas por curso
+curso_count <- data_util %>%
+  group_by(`Qual curso você faz?`) %>%
+  summarise(count = n())
+
+# Adicionando coluna de porcentagem e de etiqueta ao conjunto de dados
+curso_count <- curso_count %>%
+  mutate(percent = count / sum(count) * 100,
+         label = paste(`Qual curso você faz?`, sprintf("(%0.1f%%)", percent)))
+
+
+# Criando gráfico de pizza para útil e muito útil
+ggplot(curso_count, aes(x = "", y = count, fill = label)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar("y", start=0) +
+  theme_void() +
+  labs(title = "Distribuição de respostas 'útil' e 'muito útil' por curso",
+       fill = "Curso")
+
+
+# Filtrando os dados para incluir apenas respostas 'pouco útil ' e 'inútil'
+data_inutil <- data %>%
+  filter(`Qual nível você acredita que um chatbot pode ser útil como ferramenta de busca de conhecimento em sua área acadêmica?` %in% c("Pouco útil", "Inútil", "Indiferente"))
+
+# Contagem de respostas por curso
+curso_count_inutil <- data_inutil %>%
+  group_by(`Qual curso você faz?`) %>%
+  summarise(count = n())
+
+# Adicionando coluna de porcentagem e de etiqueta ao conjunto de dados
+curso_count_inutil <- curso_count_inutil %>%
+  mutate(percent = count / sum(count) * 100,
+         label = paste(`Qual curso você faz?`, sprintf("(%0.1f%%)", percent)))
+
+# Criando gráfico de pizza
+ggplot(curso_count_inutil, aes(x = "", y = count, fill = label)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar("y", start=0) +
+  theme_void() +
+  labs(title = "Distribuição de respostas 'pouco útil', 'Indiferente' e 'inútil' por curso",
+       fill = "Curso")
+
+
+```
